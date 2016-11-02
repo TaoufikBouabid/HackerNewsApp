@@ -1,16 +1,16 @@
 package com.example.root.hackernewsapp;
 
 import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteStatement;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
 import android.util.Log;
-import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
@@ -25,14 +25,128 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
-ArrayList<String> titleArticle;
-static ArrayList<String> urlArticle;
-ArrayAdapter<String> arrayAdapter;
+
+
+    Map<Integer,String> articleURLs = new HashMap<Integer,String>();
+    Map<Integer,String> articleTitles = new HashMap<Integer,String>();
+    ArrayList<Integer> articleIds = new ArrayList<Integer>();
+    SQLiteDatabase articlesDB ;
+    ArrayList<String> titles = new ArrayList<String>();
+    ArrayList<String> urls = new ArrayList<>();
+
+    ArrayAdapter<String> arrayAdapter;
+
+    String result="";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+
+        ListView listViewNews = (ListView) findViewById(R.id.topRatedNews);
+
+        arrayAdapter = new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,titles);
+
+        listViewNews.setAdapter(arrayAdapter);
+
+        listViewNews.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                Intent i = new Intent(MainActivity.this,webViewActivity.class);
+                Log.e("url",urls.get(position));
+                i.putExtra("url",urls.get(position));
+
+                startActivity(i);
+
+            }
+        });
+
+        articlesDB=this.openOrCreateDatabase("ARTICLESDB",MODE_PRIVATE,null);
+
+        articlesDB.execSQL("CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY , articleID INTEGER , url VARCHAR , title VARCHAR , content VARCHAR )");
+
+        updateListView();
+
+
+
+        GetJSON getJSON = new GetJSON();
+
+       // articlesDB.execSQL("DELETE FROM articles");
+
+        try {
+         getJSON.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    public void updateListView()
+    {
+        Cursor cursor = articlesDB.rawQuery("SELECT * FROM articles ORDER BY articleID DESC",null);
+
+
+        int idIndex = cursor.getColumnIndex("articleID");
+        int urlIndex = cursor.getColumnIndex("url");
+        int titleIndex = cursor.getColumnIndex("title");
+        cursor.moveToFirst();
+        Log.e("cursor size:",String.valueOf(cursor.getCount()));
+
+        titles.clear();
+        urls.clear();
+
+        while (!cursor.isAfterLast())
+        {
+
+            titles.add(cursor.getString(titleIndex));
+
+            urls.add(cursor.getString(urlIndex));
+
+
+
+            Log.e("articleID: ", String.valueOf(cursor.getInt(idIndex)));
+            Log.e("articleURL: ",cursor.getString(urlIndex));
+            Log.e("articleTitle: ",cursor.getString(titleIndex));
+
+            cursor.moveToNext();
+
+
+        }
+
+        arrayAdapter.notifyDataSetChanged();
+    }
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        return super.onOptionsItemSelected(item);
+    }
+
+
+
     public class GetJSON extends AsyncTask<String,Void,String>
     {
 
@@ -40,6 +154,7 @@ ArrayAdapter<String> arrayAdapter;
         protected String doInBackground(String... urls) {
             String result ="";
             URL url = null;
+
             HttpURLConnection urlConnection=null;
             try {
                 url = new URL(urls[0]);
@@ -66,11 +181,94 @@ ArrayAdapter<String> arrayAdapter;
                 }
 
 
+
+
+                JSONArray jsonArray = new JSONArray(result);
+
+                articlesDB.execSQL("DELETE FROM articles");
+
+                for(int i = 0 ; i<20;i++)
+                {
+                    //Log.i("Article ",jsonArray.getString(i));
+                    String articleID = jsonArray.getString(i);
+
+                     url = new URL("https://hacker-news.firebaseio.com/v0/item/"+articleID+".json?print=pretty");
+                    urlConnection = (HttpURLConnection) url.openConnection();
+                    inputStream = urlConnection.getInputStream();
+                    inputStreamReader = new InputStreamReader(inputStream);
+                    String articleInfo ="";
+                    data = inputStreamReader.read();
+
+                    while (data != -1)
+                    {
+
+                        char c = (char)data;
+                        articleInfo+=c;
+                        data = inputStreamReader.read();
+
+                    }
+
+
+                    JSONObject jsonObject = new JSONObject(articleInfo);
+
+                    if(jsonObject.has("url"))
+                    {   String articleTitle = jsonObject.getString("title");
+                        String articleURL = jsonObject.getString("url");
+
+                       /* url = new URL(articleURL);
+                        urlConnection = (HttpURLConnection) url.openConnection();
+                        inputStream = urlConnection.getInputStream();
+                        inputStreamReader = new InputStreamReader(inputStream);
+
+                        data = inputStreamReader.read();
+                        String urlContent ="";
+                        while (data != -1)
+                        {
+
+                            char c = (char)data;
+                            urlContent+=c;
+                            data = inputStreamReader.read();
+
+                        }*/
+
+
+
+
+                        articleIds.add(Integer.parseInt(articleID));
+
+                        articleTitles.put(Integer.parseInt(articleID),articleTitle);
+
+                        articleURLs.put(Integer.parseInt(articleID),articleURL);
+
+                        String sqlQueryInsert = "INSERT INTO articles (articleID , url , title) VALUES (? , ? , ?)";
+
+                        SQLiteStatement statement = articlesDB.compileStatement(sqlQueryInsert);
+
+                        statement.bindString(1,articleID);
+
+                        statement.bindString(2,articleURL);
+
+                        statement.bindString(3,articleTitle);
+
+                        statement.execute();
+
+
+                    }
+                    else{
+                        continue;
+                    }
+
+
+
+                }
+
                 return result;
 
             } catch (MalformedURLException e) {
                 e.printStackTrace();
             } catch (IOException e) {
+                e.printStackTrace();
+            } catch (JSONException e) {
                 e.printStackTrace();
             }
 
@@ -79,100 +277,13 @@ ArrayAdapter<String> arrayAdapter;
 
 
         }
-    }
 
+        @Override
+        protected void onPostExecute(String s) {
+            super.onPostExecute(s);
 
+            updateListView();
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-
-        String result="";
-        ListView listView = (ListView) findViewById(R.id.topRatedNews);
-
-        titleArticle = new ArrayList<String>();
-        urlArticle = new ArrayList<String>();
-        titleArticle.add("test");
-        urlArticle.add("test");
-        GetJSON getJSON = new GetJSON();
-        arrayAdapter= new ArrayAdapter<String>(this,R.layout.textviewlayout,titleArticle);
-        listView.setAdapter(arrayAdapter);
-
-        try {
-            result = getJSON.execute("https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty").get();
-            JSONArray jsonArray = new JSONArray(result);
-            for(int i = 1 ; i<20;i++)
-            {
-                //Log.i("Article ",jsonArray.getString(i));
-
-                GetJSON getArticle = new GetJSON();
-                String articleInfo = getArticle.execute("https://hacker-news.firebaseio.com/v0/item/"+jsonArray.getString(i)+".json?print=pretty").get();
-                JSONObject jsonObject = new JSONObject(articleInfo);
-
-                if(jsonObject.has("url"))
-                {
-                    titleArticle.add(i,jsonObject.getString("title"));
-                    urlArticle.add(i,jsonObject.getString("url"));
-                    Log.i("title",titleArticle.get(i));
-                    arrayAdapter.notifyDataSetChanged();
-
-                }
-                else{
-                    titleArticle.add(i,"NO");
-                    urlArticle.add(i,"NO");
-                    arrayAdapter.notifyDataSetChanged();
-
-                }
-
-
-
-            }
-
-
-
-
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (ExecutionException e) {
-            e.printStackTrace();
-        } catch (JSONException e) {
-            e.printStackTrace();
         }
-
-listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-    @Override
-    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-        Intent i = new Intent(MainActivity.this,webViewActivity.class);
-        i.putExtra("pos",position);
-        startActivity(i);
-    }
-});
-
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
-        }
-
-        return super.onOptionsItemSelected(item);
     }
 }
